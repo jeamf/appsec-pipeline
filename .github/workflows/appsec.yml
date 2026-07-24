@@ -13,6 +13,9 @@ permissions:
 
 jobs:
 
+  # ─────────────────────────────────────────────────────────────
+  # SAST — analise estatica do codigo-fonte
+  # ─────────────────────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
@@ -51,6 +54,9 @@ jobs:
           name: sast-semgrep
           path: semgrep.sarif
 
+  # ─────────────────────────────────────────────────────────────
+  # SCA — dependencias de terceiros
+  # ─────────────────────────────────────────────────────────────
   sca:
     name: SCA (Trivy)
     runs-on: ubuntu-latest
@@ -93,6 +99,9 @@ jobs:
           name: sca-trivy
           path: trivy.sarif
 
+  # ─────────────────────────────────────────────────────────────
+  # DAST — aplicacao rodando
+  # ─────────────────────────────────────────────────────────────
   dast:
     name: DAST (OWASP ZAP)
     runs-on: ubuntu-latest
@@ -126,6 +135,15 @@ jobs:
           cat app.log
           exit 1
 
+      # Confere se a raiz responde antes do scan.
+      # Na primeira execucao o spider do ZAP parou em 404 na raiz e nao
+      # alcancou nenhum endpoint — ver TRIAGE.md, secao DAST.
+      - name: Conferir se a raiz responde
+        run: |
+          echo "--- HTTP status ---"
+          curl -s -o /dev/null -w "GET /                -> %{http_code}\n" http://localhost:8080/
+          curl -s -o /dev/null -w "GET /api/users/all   -> %{http_code}\n" http://localhost:8080/api/users/all
+
       - name: ZAP Baseline Scan
         run: |
           mkdir -p zap-report && chmod 777 zap-report
@@ -133,7 +151,8 @@ jobs:
             -v "$(pwd)/zap-report:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py -t http://localhost:8080 \
-            -r zap-report.html -J zap-report.json -a -j || true
+            -r zap-report.html -J zap-report.json \
+            -a -j -m 3 -T 5 || true
           echo "--- Relatorios gerados ---"
           ls -la zap-report/
 
