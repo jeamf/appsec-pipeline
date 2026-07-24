@@ -13,9 +13,6 @@ permissions:
 
 jobs:
 
-  # ─────────────────────────────────────────────────────────────
-  # SAST — analise estatica do codigo-fonte
-  # ─────────────────────────────────────────────────────────────
   sast:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
@@ -54,17 +51,14 @@ jobs:
           name: sast-semgrep
           path: semgrep.sarif
 
-  # ─────────────────────────────────────────────────────────────
-  # SCA — dependencias de terceiros
-  # ─────────────────────────────────────────────────────────────
   sca:
     name: SCA (Trivy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trivy — scan de dependencias
-        uses: aquasecurity/trivy-action@master
+      - name: Trivy - resumo legivel
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
           scan-ref: ./app
@@ -72,32 +66,33 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           exit-code: '0'
 
-      - name: Trivy — gerar SARIF
-        uses: aquasecurity/trivy-action@master
+      - name: Trivy - gerar SARIF
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
           scan-ref: ./app
           format: sarif
           output: trivy.sarif
           severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '0'
+
+      - name: Conferir arquivo gerado
+        run: ls -la trivy.sarif || echo "SARIF nao foi gerado"
 
       - name: Publicar SARIF
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: hashFiles('trivy.sarif') != ''
         with:
           sarif_file: trivy.sarif
           category: trivy-sca
 
       - name: Guardar relatorio
         uses: actions/upload-artifact@v4
-        if: always()
+        if: hashFiles('trivy.sarif') != ''
         with:
           name: sca-trivy
           path: trivy.sarif
 
-  # ─────────────────────────────────────────────────────────────
-  # DAST — aplicacao rodando
-  # ─────────────────────────────────────────────────────────────
   dast:
     name: DAST (OWASP ZAP)
     runs-on: ubuntu-latest
