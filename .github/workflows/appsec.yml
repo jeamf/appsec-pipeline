@@ -127,9 +127,19 @@ jobs:
           exit 1
 
       - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+        run: |
+          mkdir -p zap-report && chmod 777 zap-report
+          docker run --rm --network host \
+            -v "$(pwd)/zap-report:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://localhost:8080 \
+            -r zap-report.html -J zap-report.json -a -j || true
+          echo "--- Relatorios gerados ---"
+          ls -la zap-report/
+
+      - name: Guardar relatorio do ZAP
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          target: 'http://localhost:8080'
-          cmd_options: '-a -j'
-          fail_action: false
-          allow_issue_writing: false
+          name: dast-zap
+          path: zap-report/
