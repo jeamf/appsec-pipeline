@@ -156,9 +156,86 @@ jobs:
           echo "--- Relatorios gerados ---"
           ls -la zap-report/
 
+      - name: Resumo dos alertas
+        if: always()
+        run: |
+          if [ -f zap-report/zap-report.json ]; then
+            echo "--- Alertas encontrados ---"
+            python3 -c "
+          import json
+          d = json.load(open('zap-report/zap-report.json'))
+          for site in d.get('site', []):
+              for a in site.get('alerts', []):
+                  print(f\"[{a.get('riskdesc','?')}] {a.get('name','?')} ({len(a.get('instances',[]))} ocorrencias)\")
+          "
+          fi
+
       - name: Guardar relatorio do ZAP
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dast-zap
           path: zap-report/
+
+  # ─────────────────────────────────────────────────────────────
+  # SECURITY GATE — criterio de aceite do pipeline
+  # Politica completa em docs/SECURITY_GATE.md
+  # ─────────────────────────────────────────────────────────────
+  security-gate:
+    name: Security Gate (HIGH/CRITICAL)
+    runs-on: ubuntu-latest
+    needs: [ sast, sca ]
+    env:
+      # enforce = reprova o build | report = so avisa
+      # Controlado pela variavel de repositorio GATE_MODE (Settings > Variables)
+      GATE_MODE: ${{ vars.GATE_MODE || 'enforce' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gate SCA - HIGH/CRITICAL com correcao disponivel
+        id: gate_sca
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./app
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Gate SAST - severidade ERROR, apenas codigo da aplicacao
+        id: gate_sast
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" semgrep/semgrep \
+            semgrep scan \
+              --config=p/java --config=p/owasp-top-ten --config=p/secrets \
+              --severity ERROR --error --metrics=off \
+              /src/app
+
+      - name: Decisao do gate
+        run: |
+          SCA="${{ steps.gate_sca.outcome }}"
+          SAST="${{ steps.gate_sast.outcome }}"
+          {
+            echo "## Security Gate"
+            echo ""
+            echo "| Verificacao | Criterio | Resultado |"
+            echo "|---|---|---|"
+            echo "| SCA (Trivy) | HIGH/CRITICAL com correcao disponivel | $SCA |"
+            echo "| SAST (Semgrep) | severidade ERROR na aplicacao | $SAST |"
+            echo ""
+            echo "Modo: **$GATE_MODE**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$SCA" = "failure" ] || [ "$SAST" = "failure" ]; then
+            if [ "$GATE_MODE" = "enforce" ]; then
+              echo "::error::Gate reprovado: ha findings HIGH/CRITICAL. Veja docs/SECURITY_GATE.md"
+              exit 1
+            else
+              echo "::warning::Gate reprovaria o build, mas o modo e 'report'."
+            fi
+          else
+            echo "Gate aprovado."
+          fi

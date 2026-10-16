@@ -35,9 +35,11 @@ appsec-pipeline/
 │   ├── src/main/java/...     # controllers com as falhas documentadas
 │   └── pom.xml               # dependências com CVEs conhecidas
 ├── .github/workflows/
-│   └── appsec.yml            # pipeline SAST + SCA + DAST
+│   └── appsec.yml            # pipeline SAST + SCA + DAST + security gate
 ├── TRIAGE.md                 # ★ análise dos findings
-└── docs/                     # evidências e prints
+└── docs/
+    ├── SECURITY_GATE.md      # política do gate e das exceções
+    └── ROADMAP.md
 ```
 
 ---
@@ -49,18 +51,21 @@ appsec-pipeline/
 | VULN-01 | SQL Injection | CWE-89 | A03 | SAST |
 | VULN-02 | IDOR / Broken Access Control | CWE-639 | A01 | **manual** |
 | VULN-03 | Exposição de dados sensíveis | CWE-200 | A02 | manual |
-| VULN-04 | Segredo hardcoded | CWE-798 | A07 | SAST |
+| VULN-04 | Segredo hardcoded | CWE-798 | A07 | **manual** (SAST não detectou) |
 | VULN-05 | Hash MD5 | CWE-327 | A02 | SAST |
 | VULN-06 | Enumeração de usuários | CWE-209 | — | **manual** |
 | VULN-07 | JWT sem expiração adequada | CWE-613 | A07 | manual |
-| VULN-08 | Path Traversal | CWE-22 | A01 | SAST + DAST |
-| VULN-09 | Upload sem validação | CWE-434 | A04 | SAST |
+| VULN-08 | Path Traversal | CWE-22 | A01 | SAST |
+| VULN-09 | Upload sem validação | CWE-434 | A04 | SAST (parcial) |
 | VULN-10 | Command Injection | CWE-78 | A03 | SAST |
-| VULN-11 | CORS permissivo | CWE-942 | A05 | SAST + DAST |
-| VULN-12 | Stack trace exposto | CWE-209 | — | DAST |
+| VULN-11 | CORS permissivo | CWE-942 | A05 | SAST não detectou; DAST a confirmar |
+| VULN-12 | Stack trace exposto | CWE-209 | — | DAST a confirmar |
 
-**2 de 12 só apareceram na revisão manual** — as duas de lógica de negócio.
-Esse é o ponto que o projeto quer demonstrar.
+**O SAST detectou 5 das 12.** As demais dependeram de revisão manual ou de
+outra camada: as de lógica de negócio (IDOR e enumeração de usuários) não
+foram detectadas por ferramenta nenhuma. Esse é o ponto que o projeto quer
+demonstrar. O resultado do DAST está sendo registrado no
+[TRIAGE.md](TRIAGE.md).
 
 ---
 
@@ -111,11 +116,18 @@ O workflow roda em todo push e pull request para `main`. Os relatórios são
 publicados em **Security → Code scanning** e ficam disponíveis como artefato
 de cada execução.
 
-O pipeline **não bloqueia o build**, de propósito: em um repositório cujo
-objetivo é conter vulnerabilidades, falhar sempre não teria utilidade. Em
-projeto real, o critério de bloqueio seria severidade a partir de HIGH em
-findings confirmados — nunca na contagem bruta da ferramenta, que inclui
-falsos positivos.
+O job **`security-gate`** aplica um critério de aceite: reprova o build se
+houver CVE HIGH/CRITICAL com correção disponível (SCA) ou finding de
+severidade ERROR no código da aplicação (SAST). A política, o tratamento de
+exceções e os limites estão em [docs/SECURITY_GATE.md](docs/SECURITY_GATE.md).
+
+Como a aplicação é vulnerável de propósito, o gate **reprova** — é o
+comportamento esperado e prova que ele bloqueia. A variável de repositório
+`GATE_MODE=report` mantém o build verde e apenas avisa.
+
+O critério usa severidade nominal só como filtro de entrada. A priorização
+real (alcançabilidade, exposição, dado sensível) continua na triagem manual
+descrita no TRIAGE.md.
 
 ---
 
